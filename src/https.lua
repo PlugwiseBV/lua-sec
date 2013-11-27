@@ -70,39 +70,62 @@ end
 
 -- Return a function which performs the SSL/TLS connection.
 local function tcp(params)
-   params = params or {}
-   -- Default settings
-   for k, v in pairs(cfg) do 
-      params[k] = params[k] or v
-   end
-   -- Force client mode
-   params.mode = "client"
-   -- 'create' function for LuaSocket
-   return function ()
-      local conn = {}
-      conn.sock = try(socket.tcp())
-      local st = getmetatable(conn.sock).__index.settimeout
-      function conn:settimeout(...)
-         return st(self.sock, ...)
-      end
-      -- Replace TCP's connection function
-      function conn:connect(host, port)
-         try(self.sock:connect(host, port))
-         self.sock = try(ssl.wrap(self.sock, params))
-         self.sock:sni(host)
-         try(self.sock:dohandshake())
-         reg(self, getmetatable(self.sock))
-         return 1
-      end
-      return conn
-  end
+    params = params or {}
+    -- Default settings
+    for k, v in pairs(cfg) do
+       params[k] = params[k] or v
+    end
+    -- Force client mode
+    params.mode = "client"
+    -- 'create' function for LuaSocket
+    return function ()
+        local conn = {}
+        conn.sock = try(socket.tcp())
+        local st = getmetatable(conn.sock).__index.settimeout
+        function conn:settimeout(...)
+            return st(self.sock, ...)
+        end
+        -- Replace TCP's connection function
+        function conn:connect(host, port)
+            if params.https_proxy then
+                self.sock:settimeout(1)
+                local proxy = params.https_proxy
+                try(self.sock:connect(proxy.host, proxy.port or 443))
+                self.sock:send(string.format("CONNECT %s:%s HTTP/1.1\r\nHost: %s\r\n%s\r\n", host, port, host,
+                                                (proxy.user and string.format("Proxy-Authorization: Basic %s\r\n", mime.b64(proxy.user..":"..proxy.password))) or ""))
+                local timeout = socket.gettime() + .3
+                local sCode, sPhrase
+                while socket.gettime() < timeout do
+                    local ok, err = self.sock:receive("*l")
+                    if ok then
+                        if sCode and sCode >= 200 and ok == "" then break end
+                        sCode, sPhrase = ok:match("HTTP/1.[01] (%d%d%d) ?(.*)")
+                        sCode = tonumber(sCode)
+                    elseif err == "closed" then
+                        return nil, "closed"
+                    end
+                end
+                if sCode and sCode >= 300 then
+                    return nil, ("Could not create (proxied) connection"..(sCode and (": "..sCode.." "..sPhrase..".")) or ".")
+                end
+            else
+                try(self.sock:connect(host, port))
+            end
+            self.sock = try(ssl.wrap(self.sock, params))
+            self.sock:sni(host)
+            try(self.sock:dohandshake())
+            reg(self, getmetatable(self.sock))
+            return 1
+        end
+        return conn
+    end
 end
 
 --------------------------------------------------------------------
 -- Main Function
 --------------------------------------------------------------------
 
--- Make a HTTP request over secure connection.  This function receives
+-- Make an HTTP request over secure connection. This function receives
 --  the same parameters of LuaSocket's HTTP module (except 'proxy' and
 --  'redirect') plus LuaSec parameters.
 --
@@ -119,7 +142,7 @@ local function request(url, body)
     url.url = default_https_port(url.url)
   end
   if http.PROXY or url.proxy then
-    return nil, "proxy not supported"
+    return nil, "proxy not supported; try https_proxy instead"
   elseif url.redirect then
     return nil, "redirect not supported"
   elseif url.create then
