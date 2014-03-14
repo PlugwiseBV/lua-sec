@@ -87,6 +87,7 @@ local function tcp(params)
         end
         -- Replace TCP's connection function
         function conn:connect(host, port)
+            self.sock:settimeout(socket.http.TIMEOUT)
             if params.https_proxy then
                 self.sock:settimeout(1)
                 local proxy = params.https_proxy
@@ -108,11 +109,13 @@ local function tcp(params)
                 if sCode and sCode >= 300 then
                     return nil, ("Could not create (proxied) connection"..(sCode and (": "..sCode.." "..sPhrase..".")) or ".")
                 end
+                self.sock:settimeout(socket.http.TIMEOUT)
             else
                 try(self.sock:connect(host, port))
             end
             self.sock = try(ssl.wrap(self.sock, params))
             self.sock:sni(host)
+            self.sock:settimeout(socket.http.TIMEOUT)
             try(self.sock:dohandshake())
             reg(self, getmetatable(self.sock))
             return 1
