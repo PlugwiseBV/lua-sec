@@ -156,9 +156,9 @@ static int ssl_send(void *ctx, const char *data, size_t count, size_t *sent,
 {
   int err;
   p_ssl ssl = (p_ssl)ctx;
+  *sent = 0;
   if (ssl->state != LSEC_STATE_CONNECTED)
     return IO_CLOSED;
-  *sent = 0;
   for ( ; ; ) {
     ERR_clear_error();
     err = SSL_write(ssl->ssl, data, (int)count);
