@@ -114,6 +114,8 @@ static int handshake(p_ssl ssl)
     case SSL_ERROR_NONE:
       ssl->state = LSEC_STATE_CONNECTED;
       return IO_DONE;
+    case SSL_ERROR_ZERO_RETURN:
+      return IO_CLOSED;
     case SSL_ERROR_WANT_READ:
       err = socket_waitfd(&ssl->sock, WAITFD_R, tm);
       if (err == IO_TIMEOUT) return LSEC_IO_SSL;
@@ -158,6 +160,8 @@ static int ssl_send(void *ctx, const char *data, size_t count, size_t *sent,
     case SSL_ERROR_NONE:
       *sent = err;
       return IO_DONE;
+    case SSL_ERROR_ZERO_RETURN:
+      return IO_CLOSED;
     case SSL_ERROR_WANT_READ: 
       err = socket_waitfd(&ssl->sock, WAITFD_R, tm);
       if (err == IO_TIMEOUT) return LSEC_IO_SSL;
